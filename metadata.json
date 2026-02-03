@@ -1,0 +1,5 @@
+{
+  "name": "Hệ thống Vé SocketCinema",
+  "description": "Hệ thống quản lý đặt vé xem phim thời gian thực sử dụng kiến trúc Socket Multi-Client Server. Bao gồm Dashboard Admin và Ứng dụng Khách hàng.",
+  "requestFramePermissions": []
+}
