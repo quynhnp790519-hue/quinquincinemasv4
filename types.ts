@@ -23,6 +23,7 @@ export enum SocketMessageType {
   STATS_UPDATE = 'STATS_UPDATE',
   MOVIES_UPDATE = 'MOVIES_UPDATE', // Server gửi danh sách phim mới nhất
   CUSTOMERS_UPDATE = 'CUSTOMERS_UPDATE', // Server gửi danh sách khách hàng
+  FOODS_UPDATE = 'FOODS_UPDATE', // Server gửi danh sách đồ ăn
 
   // Hành động Admin (Admin -> Server)
   GET_ROOM_STATE = 'GET_ROOM_STATE', // Yêu cầu lấy ghế của 1 phim cụ thể
@@ -31,6 +32,7 @@ export enum SocketMessageType {
   RESET_CONFIRMED = 'RESET_CONFIRMED', 
   ADD_MOVIE = 'ADD_MOVIE', // Admin thêm phim mới
   GET_CUSTOMERS = 'GET_CUSTOMERS', // Admin lấy danh sách khách
+  GET_FOODS = 'GET_FOODS', // Admin/Client lấy danh sách food
 
   // Hành động Khách hàng (Customer -> Server)
   GET_MOVIES = 'GET_MOVIES', // Khách lấy danh sách phim
@@ -65,6 +67,16 @@ export interface Movie {
   color: string;      // Màu chủ đạo cho UI
 }
 
+export interface FoodItem {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  image: string;
+  category: 'Popcorn' | 'Drink' | 'Combo';
+  soldCount?: number; // Cho thống kê
+}
+
 export interface TicketHistory {
     id: string;
     movieTitle: string;
@@ -72,6 +84,8 @@ export interface TicketHistory {
     price: number;
     date: string;
     theater: string;
+    foodItems?: { name: string; quantity: number; price: number }[]; // Chi tiết đồ ăn
+    foodTotal?: number; // Tổng tiền đồ ăn
 }
 
 export interface Customer {

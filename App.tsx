@@ -6,10 +6,11 @@ import { DashboardStats } from './components/DashboardStats';
 import { CustomerClient } from './components/CustomerClient';
 import { AdminMovieManager } from './components/AdminMovieManager';
 import { AdminUserManager } from './components/AdminUserManager';
-import { LayoutDashboard, Server, Film, Armchair, Users } from 'lucide-react';
+import { AdminFoodStats } from './components/AdminFoodStats';
+import { LayoutDashboard, Server, Film, Armchair, Users, Popcorn } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [adminView, setAdminView] = useState<'DASHBOARD' | 'MOVIES' | 'USERS'>('DASHBOARD');
+  const [adminView, setAdminView] = useState<'DASHBOARD' | 'MOVIES' | 'USERS' | 'FOODS'>('DASHBOARD');
 
   return (
     <SocketProvider>
@@ -58,6 +59,12 @@ const App: React.FC = () => {
                         >
                             <Users size={14} /> Quản Lý User
                         </button>
+                        <button 
+                            onClick={() => setAdminView('FOODS')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded flex items-center gap-2 transition-all ${adminView === 'FOODS' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            <Popcorn size={14} /> Quản Lý F&B
+                        </button>
                     </div>
                 </div>
 
@@ -79,6 +86,11 @@ const App: React.FC = () => {
                     {adminView === 'USERS' && (
                         <div className="flex-1 min-h-0">
                             <AdminUserManager />
+                        </div>
+                    )}
+                    {adminView === 'FOODS' && (
+                        <div className="flex-1 min-h-0">
+                            <AdminFoodStats />
                         </div>
                     )}
                 </div>

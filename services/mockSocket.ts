@@ -1,4 +1,4 @@
-import { Seat, SeatStatus, SocketMessage, SocketMessageType, StatsData, Movie, Customer } from '../types';
+import { Seat, SeatStatus, SocketMessage, SocketMessageType, StatsData, Movie, Customer, FoodItem } from '../types';
 
 /**
  * MOCK SERVER LOGIC
@@ -35,6 +35,15 @@ class MockSocketService {
     }
   ];
 
+  // Dữ liệu Food & Beverage
+  private foods: FoodItem[] = [
+    { id: 'F1', name: 'Bắp Phô Mai (L)', description: 'Bắp rang vị phô mai thơm ngon, size lớn', price: 79000, category: 'Popcorn', image: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?q=80&w=400&auto=format&fit=crop' },
+    { id: 'F2', name: 'Bắp Caramel (L)', description: 'Bắp rang vị caramel ngọt ngào, size lớn', price: 79000, category: 'Popcorn', image: 'https://images.unsplash.com/photo-1505686994434-e3cc5abf1330?q=80&w=400&auto=format&fit=crop' },
+    { id: 'F3', name: 'Coca Cola (L)', description: 'Nước ngọt có gas, tươi mát lạnh', price: 35000, category: 'Drink', image: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?q=80&w=400&auto=format&fit=crop' },
+    { id: 'F4', name: 'Combo Solo', description: '1 Bắp (M) + 1 Nước (L)', price: 99000, category: 'Combo', image: 'https://images.unsplash.com/photo-1585647347483-22b66260dfff?q=80&w=400&auto=format&fit=crop' },
+    { id: 'F5', name: 'Combo Couple', description: '1 Bắp (L) + 2 Nước (L)', price: 139000, category: 'Combo', image: 'https://images.unsplash.com/photo-1470337458703-46ad1756a187?q=80&w=400&auto=format&fit=crop' },
+  ];
+
   // Dữ liệu Khách hàng giả lập
   private customers: Customer[] = [
     {
@@ -49,8 +58,8 @@ class MockSocketService {
         points: 2540,
         totalSpent: 5400000,
         history: [
-            { id: 'T001', movieTitle: 'Mai', seatId: 'E5', price: 120000, date: '2024-02-20', theater: 'Rạp 01' },
-            { id: 'T002', movieTitle: 'Dune: Part Two', seatId: 'F5', price: 150000, date: '2024-03-01', theater: 'Rạp 02' }
+            { id: 'T001', movieTitle: 'Mai', seatId: 'E5', price: 120000, date: '2024-02-20', theater: 'Rạp 01', foodTotal: 0, foodItems: [] },
+            { id: 'T002', movieTitle: 'Dune: Part Two', seatId: 'F5', price: 150000, date: '2024-03-01', theater: 'Rạp 02', foodTotal: 0, foodItems: [] }
         ]
     },
     {
@@ -65,7 +74,7 @@ class MockSocketService {
         points: 120,
         totalSpent: 300000,
         history: [
-            { id: 'T003', movieTitle: 'Mai', seatId: 'A1', price: 80000, date: '2024-02-15', theater: 'Rạp 01' }
+            { id: 'T003', movieTitle: 'Mai', seatId: 'A1', price: 80000, date: '2024-02-15', theater: 'Rạp 01', foodTotal: 0, foodItems: [] }
         ]
     }
   ];
@@ -131,7 +140,8 @@ class MockSocketService {
     });
 
     this.stats.ticketsSold = sold;
-    this.stats.totalRevenue = revenue;
+    this.stats.totalRevenue = revenue; 
+    // Note: totalRevenue ở đây mới chỉ tính giá vé từ state ban đầu, khi có giao dịch mới sẽ cộng dồn
     this.stats.occupancyRate = totalSeats > 0 ? Math.round((sold / totalSeats) * 100) : 0;
   }
 
@@ -146,7 +156,7 @@ class MockSocketService {
       
       this.emitToClient({
         type: SocketMessageType.CONNECTED,
-        payload: { serverId: 'SRV-CINEMA-HN', version: '2.4.AUTH', message: 'Hệ thống sẵn sàng.' },
+        payload: { serverId: 'SRV-CINEMA-HN', version: '2.5.FOOD', message: 'Hệ thống sẵn sàng.' },
         timestamp: Date.now(),
         id: crypto.randomUUID()
       });
@@ -185,7 +195,6 @@ class MockSocketService {
       // --- LOGIN LOGIC ---
       case SocketMessageType.LOGIN_REQUEST:
         const { email, password } = payload;
-        // Mock check: Password mặc định là '123456' cho tất cả
         const foundUser = this.customers.find(c => c.email === email);
         
         if (foundUser && password === '123456') {
@@ -205,13 +214,12 @@ class MockSocketService {
         }
         break;
 
-      // --- REGISTER LOGIC ---
       case SocketMessageType.REGISTER_REQUEST:
         const { name, regEmail, regPassword, phone } = payload;
         
         if (this.customers.some(c => c.email === regEmail)) {
              this.emitToClient({
-                type: SocketMessageType.LOGIN_FAILURE, // Dùng chung failure type
+                type: SocketMessageType.LOGIN_FAILURE, 
                 payload: { message: 'Email đã tồn tại trong hệ thống.' },
                 timestamp: Date.now(),
                 id: msgId
@@ -231,18 +239,15 @@ class MockSocketService {
                 history: []
             };
             this.customers.push(newUser);
-            
-            // Broadcast user list mới cho Admin
             this.emitToClient({
                 type: SocketMessageType.CUSTOMERS_UPDATE,
                 payload: { customers: this.customers },
                 timestamp: Date.now(),
                 id: crypto.randomUUID()
             });
-
             this.emitToClient({
                 type: SocketMessageType.REGISTER_SUCCESS,
-                payload: { customer: newUser }, // Auto login
+                payload: { customer: newUser }, 
                 timestamp: Date.now(),
                 id: msgId
             });
@@ -258,7 +263,15 @@ class MockSocketService {
         });
         break;
 
-      // --- USER MANAGEMENT ---
+      case SocketMessageType.GET_FOODS:
+        this.emitToClient({
+          type: SocketMessageType.FOODS_UPDATE,
+          payload: { foods: this.foods },
+          timestamp: Date.now(),
+          id: msgId
+        });
+        break;
+
       case SocketMessageType.GET_CUSTOMERS:
         this.emitToClient({
             type: SocketMessageType.CUSTOMERS_UPDATE,
@@ -275,10 +288,7 @@ class MockSocketService {
           color: "from-blue-900 to-slate-900"
         };
         this.movies.unshift(newMovie); 
-        
-        // Khởi tạo phòng chiếu (ghế) cho phim mới
         this.seatsByMovie[newMovie.id] = this.generateSeatsForRoom(); 
-        
         this.emitToClient({
           type: SocketMessageType.MOVIES_UPDATE,
           payload: { movies: this.movies },
@@ -290,7 +300,6 @@ class MockSocketService {
       case SocketMessageType.GET_ROOM_STATE:
         const targetMovieId = payload.movieId || this.movies[0]?.id;
         const targetSeats = this.seatsByMovie[targetMovieId] || [];
-
         this.emitToClient({
           type: SocketMessageType.ROOM_STATE_RESPONSE,
           payload: { seats: targetSeats, movieId: targetMovieId },
@@ -302,20 +311,15 @@ class MockSocketService {
       case SocketMessageType.RESET_ROOM:
         const resetMovieId = payload.movieId;
         if (resetMovieId && this.seatsByMovie[resetMovieId]) {
-            // FIX: Cập nhật trạng thái từng ghế
             this.seatsByMovie[resetMovieId].forEach(s => s.status = SeatStatus.AVAILABLE);
             this.recalculateStats();
-            
             this.emitToClient({
                 type: SocketMessageType.RESET_CONFIRMED,
                 payload: { message: `Đã reset phòng chiếu phim ID: ${resetMovieId}` },
                 timestamp: Date.now(),
                 id: msgId
             });
-
-            // FIX: Tạo bản sao mảng (Array Copy) để React nhận diện thay đổi state
             const refreshedSeats = [...this.seatsByMovie[resetMovieId]].map(seat => ({...seat}));
-
             this.emitToClient({
                 type: SocketMessageType.ROOM_STATE_RESPONSE,
                 payload: { seats: refreshedSeats, movieId: resetMovieId },
@@ -327,14 +331,15 @@ class MockSocketService {
         break;
 
       case SocketMessageType.BOOK_SEAT_REQUEST:
-        this.handleCustomerBooking(payload.seatId, payload.userId, payload.movieId, payload.movieTitle);
+        this.handleCustomerBooking(payload);
         break;
     }
   }
 
-  private handleCustomerBooking(seatId: string, userId: string, movieId: string, movieTitle: string) {
-    const seats = this.seatsByMovie[movieId];
+  private handleCustomerBooking(payload: any) {
+    const { seatId, userId, movieId, movieTitle, cartItems, foodTotal } = payload;
     
+    const seats = this.seatsByMovie[movieId];
     if (!seats) return;
 
     const seat = seats.find(s => s.id === seatId);
@@ -352,22 +357,29 @@ class MockSocketService {
     seat.status = SeatStatus.BOOKED;
     this.recalculateStats();
     
+    // Tính tổng tiền (Vé + Food)
+    const finalPrice = seat.price + (foodTotal || 0);
+
+    // Cập nhật thống kê Global
+    this.stats.totalRevenue += (foodTotal || 0); // Cộng thêm phần food (phần vé đã tính trong recalculateStats khi update trạng thái)
+
     // Tìm user đặt vé trong DB để update history
-    const customerIndex = this.customers.findIndex(c => c.name === userId || c.email === userId || c.id === userId); // Flexible check for mock
+    const customerIndex = this.customers.findIndex(c => c.name === userId || c.email === userId || c.id === userId); 
     
     if (customerIndex !== -1) {
         this.customers[customerIndex].history.unshift({
             id: `T${Date.now()}`,
             movieTitle: movieTitle,
             seatId: seat.id,
-            price: seat.price,
+            price: finalPrice,
             date: new Date().toISOString().split('T')[0],
-            theater: 'Rạp 01'
+            theater: 'Rạp 01',
+            foodTotal: foodTotal || 0,
+            foodItems: cartItems // Lưu danh sách đồ ăn đã đặt
         });
-        this.customers[customerIndex].points += Math.floor(seat.price / 1000);
-        this.customers[customerIndex].totalSpent += seat.price;
+        this.customers[customerIndex].points += Math.floor(finalPrice / 1000);
+        this.customers[customerIndex].totalSpent += finalPrice;
         
-        // Broadcast update user list to admin
         this.emitToClient({
             type: SocketMessageType.CUSTOMERS_UPDATE,
             payload: { customers: this.customers },
@@ -390,8 +402,9 @@ class MockSocketService {
         customer: userId,
         movie: movieTitle || 'Không xác định',
         seat: seat.id,
-        price: seat.price,
-        time: new Date().toLocaleTimeString()
+        price: finalPrice,
+        time: new Date().toLocaleTimeString(),
+        note: foodTotal > 0 ? `+ Đồ ăn (${foodTotal.toLocaleString()}đ)` : ''
       },
       timestamp: Date.now(),
       id: crypto.randomUUID()

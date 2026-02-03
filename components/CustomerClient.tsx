@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
-import { Seat, SeatStatus, SocketMessageType, Movie, Customer } from '../types';
-import { Smartphone, CheckCircle, AlertCircle, ChevronLeft, Clock, Star, Calendar, PlayCircle, X, Gift, User, QrCode, Ticket, Settings, LogOut, ChevronRight, Lock, Mail, ArrowRight, Moon, Sun, Camera, Edit2, Save, ArrowLeft } from 'lucide-react';
+import { Seat, SeatStatus, SocketMessageType, Movie, Customer, FoodItem } from '../types';
+import { Smartphone, CheckCircle, AlertCircle, ChevronLeft, Clock, Star, Calendar, PlayCircle, X, Gift, User, QrCode, Ticket, Settings, LogOut, ChevronRight, Lock, Mail, ArrowRight, Moon, Sun, Camera, Edit2, Save, ArrowLeft, Popcorn, Plus, Minus, ShoppingBag } from 'lucide-react';
 
-type ViewState = 'LOGIN' | 'REGISTER' | 'MOVIE_LIST' | 'SEAT_SELECTION' | 'SUCCESS' | 'PROFILE_EDIT' | 'SETTINGS';
+type ViewState = 'LOGIN' | 'REGISTER' | 'MOVIE_LIST' | 'SEAT_SELECTION' | 'FOOD_SELECTION' | 'SUCCESS' | 'PROFILE_EDIT' | 'SETTINGS';
 type TabState = 'MOVIES' | 'OFFERS' | 'PROFILE';
 
 export const CustomerClient: React.FC = () => {
@@ -30,9 +30,13 @@ export const CustomerClient: React.FC = () => {
 
   // Data State
   const [movies, setMovies] = useState<Movie[]>([]);
+  const [foods, setFoods] = useState<FoodItem[]>([]); // Danh sách món ăn
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [seats, setSeats] = useState<Seat[]>([]);
   const [selectedSeat, setSelectedSeat] = useState<string | null>(null);
+  
+  // Cart State (Food)
+  const [cart, setCart] = useState<{ [id: string]: number }>({}); // { foodId: quantity }
   
   const [userProfile, setUserProfile] = useState<Customer | null>(null);
   
@@ -66,6 +70,7 @@ export const CustomerClient: React.FC = () => {
   useEffect(() => {
     if (isConnected) {
         sendMessage(SocketMessageType.GET_MOVIES, {});
+        sendMessage(SocketMessageType.GET_FOODS, {}); // Lấy danh sách đồ ăn
     }
   }, [isConnected, sendMessage]);
 
@@ -99,6 +104,10 @@ export const CustomerClient: React.FC = () => {
     if (lastMessage.type === SocketMessageType.MOVIES_UPDATE) {
         setMovies(lastMessage.payload.movies);
     }
+    
+    if (lastMessage.type === SocketMessageType.FOODS_UPDATE) {
+        setFoods(lastMessage.payload.foods);
+    }
 
     if (lastMessage.type === SocketMessageType.ROOM_STATE_RESPONSE) {
       if (selectedMovie && lastMessage.payload.movieId === selectedMovie.id) {
@@ -114,6 +123,7 @@ export const CustomerClient: React.FC = () => {
             setView('SUCCESS');
             setBookingStatus('idle');
             setSelectedSeat(null);
+            setCart({}); // Reset giỏ hàng
             // Update local fake profile points for instant feedback
             setUserProfile(prev => prev ? ({...prev, points: prev.points + 100}) : null); 
         }
@@ -158,28 +168,59 @@ export const CustomerClient: React.FC = () => {
     setEmail('');
     setPassword('');
     setActiveTab('MOVIES');
+    setCart({});
   };
 
   const handleSelectMovie = (movie: Movie) => {
     setSelectedMovie(movie);
     setView('SEAT_SELECTION');
     setSeats([]); 
+    setCart({}); // Reset cart khi chọn phim mới
   };
 
   const handleSeatClick = (seat: Seat) => {
     if (seat.status !== SeatStatus.AVAILABLE) return;
     setSelectedSeat(seat.id === selectedSeat ? null : seat.id);
   };
+  
+  const handleAddToCart = (foodId: string, delta: number) => {
+      setCart(prev => {
+          const currentQty = prev[foodId] || 0;
+          const newQty = Math.max(0, currentQty + delta);
+          if (newQty === 0) {
+              const { [foodId]: _, ...rest } = prev;
+              return rest;
+          }
+          return { ...prev, [foodId]: newQty };
+      });
+  };
+
+  const getFoodTotal = () => {
+      let total = 0;
+      Object.entries(cart).forEach(([id, qty]) => {
+          const food = foods.find(f => f.id === id);
+          if (food) total += food.price * qty;
+      });
+      return total;
+  };
 
   const confirmBooking = () => {
     if (!selectedSeat || !selectedMovie || !userProfile) return;
     setBookingStatus('processing');
     
+    // Chuẩn bị dữ liệu đồ ăn gửi về server
+    const cartItems = Object.entries(cart).map(([id, qty]) => {
+        const food = foods.find(f => f.id === id);
+        return { name: food?.name || 'Unknown', quantity: qty, price: (food?.price || 0) * qty };
+    });
+
     sendMessage(SocketMessageType.BOOK_SEAT_REQUEST, {
       seatId: selectedSeat,
-      userId: userProfile.name, // Use real profile name for tracking
+      userId: userProfile.name, 
       movieId: selectedMovie.id,
-      movieTitle: selectedMovie.title
+      movieTitle: selectedMovie.title,
+      cartItems,
+      foodTotal: getFoodTotal()
     });
   };
 
@@ -405,7 +446,10 @@ export const CustomerClient: React.FC = () => {
                                    <div className="flex-1">
                                        <div className={`font-bold text-sm ${theme.text}`}>{ticket.movieTitle}</div>
                                        <div className={`text-xs ${theme.subText}`}>{ticket.theater} • Ghế {ticket.seatId}</div>
-                                       <div className={`text-xs ${theme.subText} mt-1`}>{ticket.date}</div>
+                                       <div className={`text-xs ${theme.subText} mt-1`}>
+                                           {ticket.date}
+                                           {ticket.foodItems && ticket.foodItems.length > 0 && <span className="text-orange-500 ml-2 font-bold">+ {ticket.foodItems.length} Food</span>}
+                                       </div>
                                    </div>
                                </div>
                            ))}
@@ -587,21 +631,102 @@ export const CustomerClient: React.FC = () => {
         </div>
 
         <div className={`absolute bottom-0 left-0 right-0 ${theme.navBg} p-4 border-t ${theme.border} z-20`}>
-           {bookingStatus === 'error' && <div className="mb-2 text-red-400 text-xs flex items-center gap-1"><AlertCircle size={12}/> {errorMsg}</div>}
            <div className="flex justify-between items-center">
               <div>
-                 <div className={`${theme.subText} text-xs`}>Tổng cộng</div>
+                 <div className={`${theme.subText} text-xs`}>Tổng cộng (Ghế)</div>
                  <div className={`text-xl font-bold ${theme.text}`}>{selectedSeat ? (seats.find(s=>s.id===selectedSeat)?.price || 0).toLocaleString('vi-VN') : 0}đ</div>
                  <div className={`text-[10px] ${theme.subText}`}>{selectedSeat || 'Chưa chọn ghế'}</div>
               </div>
-              <button onClick={confirmBooking} disabled={!selectedSeat || bookingStatus === 'processing'}
-                className={`px-6 py-3 rounded-lg font-bold text-sm transition-all ${selectedSeat && bookingStatus !== 'processing' ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}>
-                {bookingStatus === 'processing' ? 'Đang xử lý...' : 'THANH TOÁN'}
+              <button onClick={() => selectedSeat && setView('FOOD_SELECTION')} disabled={!selectedSeat}
+                className={`px-6 py-3 rounded-lg font-bold text-sm transition-all flex items-center gap-2 ${selectedSeat ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}>
+                TIẾP TỤC <ArrowRight size={14}/>
               </button>
            </div>
         </div>
       </div>
   );
+
+  const renderFoodSelection = () => {
+    const seatPrice = selectedSeat ? (seats.find(s=>s.id===selectedSeat)?.price || 0) : 0;
+    const foodTotal = getFoodTotal();
+    const grandTotal = seatPrice + foodTotal;
+
+    return (
+        <div className={`flex flex-col h-full ${theme.bg} animate-in slide-in-from-right duration-300`}>
+            {/* Header */}
+            <div className={`p-4 ${theme.navBg} z-10 shadow-lg border-b ${theme.border}`}>
+                <button onClick={() => setView('SEAT_SELECTION')} className={`flex items-center gap-1 ${theme.subText} text-xs mb-2 hover:${theme.text}`}>
+                    <ChevronLeft size={14}/> Quay lại chọn ghế
+                </button>
+                <h2 className={`${theme.text} font-bold text-lg`}>Đồ Ăn & Thức Uống</h2>
+                <div className={`text-xs ${theme.subText} mt-1`}>Chọn thêm bắp nước để trải nghiệm tuyệt vời hơn</div>
+            </div>
+
+            {/* List */}
+            <div className={`flex-1 overflow-y-auto p-4 ${theme.bg} pb-32`}>
+                <div className="grid grid-cols-1 gap-4">
+                    {foods.map(food => {
+                        const qty = cart[food.id] || 0;
+                        return (
+                            <div key={food.id} className={`${theme.cardBg} rounded-xl p-3 border ${theme.border} flex gap-3`}>
+                                <img src={food.image} alt={food.name} className="w-20 h-20 rounded-lg object-cover bg-slate-200"/>
+                                <div className="flex-1 flex flex-col justify-between">
+                                    <div>
+                                        <h3 className={`font-bold ${theme.text} text-sm`}>{food.name}</h3>
+                                        <p className={`text-[10px] ${theme.subText} line-clamp-2`}>{food.description}</p>
+                                    </div>
+                                    <div className="flex items-center justify-between mt-2">
+                                        <span className="text-orange-600 font-bold text-sm">{food.price.toLocaleString()}đ</span>
+                                        <div className="flex items-center gap-3">
+                                            {qty > 0 && (
+                                                <button onClick={() => handleAddToCart(food.id, -1)} className={`w-6 h-6 rounded-full border ${theme.border} flex items-center justify-center text-slate-500 hover:bg-slate-100`}>
+                                                    <Minus size={12}/>
+                                                </button>
+                                            )}
+                                            {qty > 0 && <span className={`text-sm font-bold ${theme.text} w-4 text-center`}>{qty}</span>}
+                                            <button onClick={() => handleAddToCart(food.id, 1)} className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center hover:bg-orange-200">
+                                                <Plus size={12}/>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+            </div>
+
+            {/* Bottom Bar */}
+            <div className={`absolute bottom-0 left-0 right-0 ${theme.navBg} p-4 border-t ${theme.border} z-20`}>
+                {bookingStatus === 'error' && <div className="mb-2 text-red-400 text-xs flex items-center gap-1"><AlertCircle size={12}/> {errorMsg}</div>}
+                
+                <div className="space-y-1 mb-3">
+                    <div className="flex justify-between text-xs">
+                        <span className={theme.subText}>Vé ({selectedSeat})</span>
+                        <span className={theme.text}>{seatPrice.toLocaleString()}đ</span>
+                    </div>
+                    {foodTotal > 0 && (
+                        <div className="flex justify-between text-xs">
+                            <span className={theme.subText}>Bắp nước</span>
+                            <span className={theme.text}>{foodTotal.toLocaleString()}đ</span>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex justify-between items-center pt-3 border-t border-slate-700/10">
+                    <div>
+                        <div className={`${theme.subText} text-xs`}>Tổng thanh toán</div>
+                        <div className={`text-xl font-bold text-orange-600`}>{grandTotal.toLocaleString('vi-VN')}đ</div>
+                    </div>
+                    <button onClick={confirmBooking} disabled={bookingStatus === 'processing'}
+                        className={`px-6 py-3 rounded-lg font-bold text-sm transition-all flex items-center gap-2 ${bookingStatus === 'processing' ? 'bg-slate-700 text-slate-500' : 'bg-orange-600 text-white shadow-lg shadow-orange-900/20'}`}>
+                        {bookingStatus === 'processing' ? 'ĐANG XỬ LÝ...' : 'THANH TOÁN'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+  };
 
   const renderSuccess = () => (
     <div className={`flex flex-col items-center justify-center h-full ${theme.bg} p-6 text-center animate-in zoom-in duration-300`}>
@@ -639,6 +764,7 @@ export const CustomerClient: React.FC = () => {
            {view === 'SETTINGS' && renderSettings()}
            
            {view === 'SEAT_SELECTION' && renderSeatSelection()}
+           {view === 'FOOD_SELECTION' && renderFoodSelection()}
            {view === 'SUCCESS' && renderSuccess()}
         </div>
 
